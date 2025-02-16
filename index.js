@@ -243,8 +243,8 @@ const downloadAudioPlaylist = async () => {
         const videoId = item.videoId;
         const title = item.title;
 
-        if (fs.existsSync(`downloads/${playlistTitle}/${title}.mp4`)) {
-            const stats = fs.statSync(`downloads/${playlistTitle}/${title}.mp4`);
+        if (fs.existsSync(`downloads/${playlistTitle}/${title}.mp3`)) {
+            const stats = fs.statSync(`downloads/${playlistTitle}/${title}.mp3`);
             if (stats.size > 0) {
                 spinner.warn(chalk.yellow(`Video ${title} sudah ada. Lewati...`));
                 continue;
