@@ -44,26 +44,62 @@ const promptForUrl = async (type) => {
     return url;
 };
 
+const getVideoInfo = async (videoUrl) => {
+    const spinner = ora('Mendapatkan info video...').start();
+    try {
+        const info = await ytdl.getInfo(videoUrl);
+        spinner.succeed('Mendapatkan info video berhasil!');
+        return info;
+    } catch (error) {
+        spinner.fail('Gagal mendapatkan info video.');
+        console.error(chalk.red(error));
+        return null;
+    }
+};
+
+const displayVideoDetails = (detail) => {
+    console.log(chalk.yellow(`Judul: ${detail.title}`));
+    console.log(chalk.yellow(`Channel: ${detail.author.name}`));
+    console.log(chalk.yellow(`Durasi: ${detail.lengthSeconds} detik`));
+    console.log(chalk.yellow(`Thumbnail: ${detail.thumbnails[0].url}`));
+};
+
+const downloadMedia = async (videoUrl, options, filePath) => {
+    const spinner = ora('Downloading...').start();
+    const media = ytdl(videoUrl, options);
+
+    const title = (filePath.split('/').pop()).split('.')[0];
+
+    media.pipe(fs.createWriteStream(filePath));
+
+    return new Promise((resolve, reject) => {
+        media.on('progress', (chunkLength, downloaded, total) => {
+            const percent = downloaded / total * 100;
+            spinner.text = `${percent.toFixed(2)}% downloaded (${(downloaded / (1024 * 1024)).toFixed(2)} MB of ${(total / (1024 * 1024)).toFixed(2)} MB)`;
+        });
+
+        media.on('end', () => {
+            spinner.succeed(chalk.green(`Download ${title} selesai!`));
+            resolve();
+        });
+
+        media.on('error', (error) => {
+            spinner.fail('Error downloading media:');
+            console.error(chalk.red(error));
+            reject(error);
+        });
+    });
+};
+
 const downloadVideo = async () => {
     const videoUrl = await promptForUrl('video');
     if (!videoUrl) return;
 
-    const spinner = ora('Mendapatkan info video...').start();
-    const info = await ytdl.getInfo(videoUrl);
-
-    if (!info) {
-        spinner.fail('Gagal mendapatkan info video.');
-        return;
-    }
+    const info = await getVideoInfo(videoUrl);
+    if (!info) return;
 
     const detail = info.videoDetails;
-    const title = detail.title;
-
-    spinner.succeed('Mendapatkan info video berhasil!');
-    console.log(chalk.yellow(`Judul: ${title}`));
-    console.log(chalk.yellow(`Channel: ${detail.author.name}`));
-    console.log(chalk.yellow(`Durasi: ${detail.lengthSeconds} detik`));
-    console.log(chalk.yellow(`Thumbnail: ${detail.thumbnails[0].url}`));
+    displayVideoDetails(detail);
 
     const download = await inquirer.prompt([
         {
@@ -76,50 +112,22 @@ const downloadVideo = async () => {
 
     if (!download.download) return;
 
-    spinner.start('Downloading video...');
-    const video = ytdl(videoUrl, { quality: 'highest', filter: 'audioandvideo' });
-
-    video.pipe(fs.createWriteStream(`downloads/${title}.mp4`));
-
-    video.on('progress', (chunkLength, downloaded, total) => {
-        const percent = downloaded / total * 100;
-        spinner.text = `${percent.toFixed(2)}% downloaded (${(downloaded / (1024 * 1024)).toFixed(2)} MB of ${(total / (1024 * 1024)).toFixed(2)} MB)`;
-    });
-
-    video.on('end', () => {
-        spinner.succeed('Download selesai!');
-        setTimeout(() => {
-            console.clear();
-            menu();
-        }, 2000);
-    });
-
-    video.on('error', (error) => {
-        spinner.fail('Error downloading video:');
-        console.error(chalk.red(error));
-    });
+    await downloadMedia(videoUrl, { quality: 'highest', filter: 'audioandvideo' }, `downloads/${detail.title}.mp4`);
+    setTimeout(() => {
+        console.clear();
+        menu();
+    }, 2000);
 };
 
 const downloadAudio = async () => {
     const videoUrl = await promptForUrl('video');
     if (!videoUrl) return;
 
-    const spinner = ora('Mendapatkan info video...').start();
-    const info = await ytdl.getInfo(videoUrl);
-
-    if (!info) {
-        spinner.fail('Gagal mendapatkan info video.');
-        return;
-    }
+    const info = await getVideoInfo(videoUrl);
+    if (!info) return;
 
     const detail = info.videoDetails;
-    const title = detail.title;
-
-    spinner.succeed('Mendapatkan info video berhasil!');
-    console.log(chalk.yellow(`Judul: ${title}`));
-    console.log(chalk.yellow(`Channel: ${detail.author.name}`));
-    console.log(chalk.yellow(`Durasi: ${detail.lengthSeconds} detik`));
-    console.log(chalk.yellow(`Thumbnail: ${detail.thumbnails[0].url}`));
+    displayVideoDetails(detail);
 
     const download = await inquirer.prompt([
         {
@@ -132,28 +140,11 @@ const downloadAudio = async () => {
 
     if (!download.download) return;
 
-    spinner.start('Downloading audio...');
-    const audio = ytdl(videoUrl, { quality: 'highestaudio' });
-
-    audio.pipe(fs.createWriteStream(`downloads/${title}.mp3`));
-
-    audio.on('progress', (chunkLength, downloaded, total) => {
-        const percent = downloaded / total * 100;
-        spinner.text = `${percent.toFixed(2)}% downloaded (${(downloaded / (1024 * 1024)).toFixed(2)} MB of ${(total / (1024 * 1024)).toFixed(2)} MB)`;
-    });
-
-    audio.on('end', () => {
-        spinner.succeed('Download selesai!');
-        setTimeout(() => {
-            console.clear();
-            menu();
-        }, 2000);
-    });
-
-    audio.on('error', (error) => {
-        spinner.fail('Error downloading audio:');
-        console.error(chalk.red(error));
-    });
+    await downloadMedia(videoUrl, { quality: 'highestaudio' }, `downloads/${detail.title}.mp3`);
+    setTimeout(() => {
+        console.clear();
+        menu();
+    }, 2000);
 };
 
 const downloadPlaylist = async () => {
@@ -168,11 +159,11 @@ const downloadPlaylist = async () => {
     const playlistItems = searchResults.videos;
 
     if (playlistItems.length === 0) {
-        spinner.fail('Gagal mendapatkan info playlist.');
+        spinner.fail(chalk.red('Gagal mendapatkan info playlist.'));
         return;
     }
 
-    spinner.succeed('Mendapatkan info playlist berhasil!');
+    spinner.succeed(chalk.green('Mendapatkan info playlist berhasil!'));
     console.log(chalk.yellow(`Playlist berisi ${playlistItems.length} video.`));
 
     const download = await inquirer.prompt([
@@ -193,28 +184,19 @@ const downloadPlaylist = async () => {
         const videoId = item.videoId;
         const title = item.title;
 
-        spinner.start(`Downloading video: ${title}...`);
-        const video = ytdl(videoId, { quality: 'highest', filter: 'audioandvideo' });
+        if (fs.existsSync(`downloads/${playlistTitle}/${title}.mp4`)) {
+            const stats = fs.statSync(`downloads/${playlistTitle}/${title}.mp4`);
+            if (stats.size > 0) {
+                spinner.warn(chalk.yellow(`Video ${title} sudah ada. Lewati...`));
+                continue;
+            }
+        }
 
-        video.pipe(fs.createWriteStream(`downloads/${playlistTitle}/${title}.mp4`));
-
-        await new Promise((resolve, reject) => {
-            video.on('progress', (chunkLength, downloaded, total) => {
-                const percent = downloaded / total * 100;
-                spinner.text = `${percent.toFixed(2)}% downloaded (${(downloaded / (1024 * 1024)).toFixed(2)} MB of ${(total / (1024 * 1024)).toFixed(2)} MB)`;
-            });
-
-            video.on('end', () => {
-                spinner.succeed(`Download selesai: ${title}`);
-                resolve();
-            });
-
-            video.on('error', (error) => {
-                spinner.fail(`Error downloading video: ${title}`);
-                console.error(chalk.red(error));
-                reject(error);
-            });
-        });
+        try {
+            await downloadMedia(`https://www.youtube.com/watch?v=${videoId}`, { quality: 'highest', filter: 'audioandvideo' }, `downloads/${playlistTitle}/${title}.mp4`);
+        } catch (error) {
+            spinner.fail(`Gagal mendownload video ${title}.`);
+        }
     }
 
     console.log(chalk.green('Semua video di playlist berhasil didownload!'));
@@ -261,28 +243,15 @@ const downloadAudioPlaylist = async () => {
         const videoId = item.videoId;
         const title = item.title;
 
-        spinner.start(`Downloading audio: ${title}...`);
-        const audio = ytdl(`https://www.youtube.com/watch?v=${videoId}`, { quality: 'highestaudio' });
+        if (fs.existsSync(`downloads/${playlistTitle}/${title}.mp4`)) {
+            const stats = fs.statSync(`downloads/${playlistTitle}/${title}.mp4`);
+            if (stats.size > 0) {
+                spinner.warn(chalk.yellow(`Video ${title} sudah ada. Lewati...`));
+                continue;
+            }
+        }
 
-        audio.pipe(fs.createWriteStream(`downloads/${playlistTitle}/${title}.mp3`));
-
-        await new Promise((resolve, reject) => {
-            audio.on('progress', (chunkLength, downloaded, total) => {
-                const percent = downloaded / total * 100;
-                spinner.text = `${percent.toFixed(2)}% downloaded (${(downloaded / (1024 * 1024)).toFixed(2)} MB of ${(total / (1024 * 1024)).toFixed(2)} MB)`;
-            });
-
-            audio.on('end', () => {
-                spinner.succeed(`Download selesai: ${title}`);
-                resolve();
-            });
-
-            audio.on('error', (error) => {
-                spinner.fail(`Error downloading audio: ${title}`);
-                console.error(chalk.red(error));
-                reject(error);
-            });
-        });
+        await downloadMedia(`https://www.youtube.com/watch?v=${videoId}`, { quality: 'highestaudio' }, `downloads/${playlistTitle}/${title}.mp3`);
     }
 
     console.log(chalk.green('Semua audio di playlist berhasil didownload!'));
