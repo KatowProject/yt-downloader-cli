@@ -1,0 +1,21 @@
+{
+  "name": "yt-downloader",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "type": "module",
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "inquirer": "^12.4.2",
+    "ora": "^8.2.0",
+    "readline-sync": "^1.4.10",
+    "yt-search": "^2.12.1",
+    "ytdl-core": "npm:@distube/ytdl-core@^4.16.4"
+  }
+}
