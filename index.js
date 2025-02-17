@@ -4,6 +4,8 @@ import yts from 'yt-search';
 import fs from 'fs';
 import chalk from 'chalk';
 import ora from 'ora';
+import { exec } from 'child_process';
+
 
 const promptForUrl = async (type) => {
     let isValidUrl = false;
@@ -67,7 +69,7 @@ const displayVideoDetails = (detail) => {
 const downloadMedia = async (videoUrl, options, filePath) => {
     const spinner = ora('Downloading...').start();
     const media = ytdl(videoUrl, options);
-
+    
     const title = (filePath.split('/').pop()).split('.')[0];
 
     media.pipe(fs.createWriteStream(filePath));
@@ -78,8 +80,21 @@ const downloadMedia = async (videoUrl, options, filePath) => {
             spinner.text = `${percent.toFixed(2)}% downloaded (${(downloaded / (1024 * 1024)).toFixed(2)} MB of ${(total / (1024 * 1024)).toFixed(2)} MB)`;
         });
 
-        media.on('end', () => {
-            spinner.succeed(chalk.green(`Download ${title} selesai!`));
+        media.on('end', async () => {
+            if (filePath.includes('.mp4')) {
+                spinner.succeed(chalk.green(`Download ${title} selesai!`));
+            } else {
+                spinner.succeed(chalk.green(`Download ${title} selesai!, proses konversi ke mp3...`));
+
+                const mp3FilePath = filePath.replace('.opus', '.mp3');
+                try {
+                    await convertToMP3(filePath, mp3FilePath);
+                } catch (error) {
+                    spinner.fail('Gagal mengonversi ke MP3');
+                    console.error(error);
+                    reject(error);
+                }
+            }
             resolve();
         });
 
@@ -87,6 +102,27 @@ const downloadMedia = async (videoUrl, options, filePath) => {
             spinner.fail('Error downloading media:');
             console.error(chalk.red(error));
             reject(error);
+        });
+    });
+};
+
+const convertToMP3 = async (rawFilePath, mp3FilePath) => {
+    return new Promise((resolve, reject) => {
+        const spinner = ora('Mengonversi ke MP3...').start();
+        const command = `ffmpeg -y -i "${rawFilePath}" -vn -ar 44100 -ac 2 -b:a 192k "${mp3FilePath}"`;
+
+        exec(command, (error) => {
+            if (error) {
+                spinner.fail('Gagal mengonversi ke MP3');
+                reject(error);
+            } else {
+                spinner.succeed(chalk.green(`Konversi selesai: ${mp3FilePath}`));
+
+                // delete raw file
+                fs.unlinkSync(rawFilePath);
+                
+                resolve(mp3FilePath);
+            }
         });
     });
 };
@@ -140,7 +176,7 @@ const downloadAudio = async () => {
 
     if (!download.download) return;
 
-    await downloadMedia(videoUrl, { quality: 'highestaudio' }, `downloads/${detail.title}.mp3`);
+    await downloadMedia(videoUrl, { quality: 'highestaudio' }, `downloads/${detail.title}.opus`);
     setTimeout(() => {
         console.clear();
         menu();
@@ -251,7 +287,7 @@ const downloadAudioPlaylist = async () => {
             }
         }
 
-        await downloadMedia(`https://www.youtube.com/watch?v=${videoId}`, { quality: 'highestaudio' }, `downloads/${playlistTitle}/${title}.mp3`);
+        await downloadMedia(`https://www.youtube.com/watch?v=${videoId}`, { quality: 'highestaudio' }, `downloads/${playlistTitle}/${title}.opus`);
     }
 
     console.log(chalk.green('Semua audio di playlist berhasil didownload!'));
