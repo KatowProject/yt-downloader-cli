@@ -1,3 +1,5 @@
 node_modules
 downloads
 logs
+temp
+dist

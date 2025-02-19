@@ -1,11 +1,15 @@
-import inquirer from 'inquirer';
-import ytdl from 'ytdl-core';
-import yts from 'yt-search';
 import fs from 'fs';
+import Ffmpeg from 'fluent-ffmpeg';
+
+import inquirer from 'inquirer';
 import chalk from 'chalk';
 import ora from 'ora';
-import { exec } from 'child_process';
 
+import ytdl from 'ytdl-core';
+import yts from 'yt-search';
+
+const DOWNLOADS_DIR = 'downloads';
+const TEMP_DIR = 'temp';
 
 const promptForUrl = async (type) => {
     let isValidUrl = false;
@@ -37,9 +41,7 @@ const promptForUrl = async (type) => {
                 }
             ]);
 
-            if (!retry.retry) {
-                return null;
-            }
+            if (!retry.retry) return null;
         }
     }
 
@@ -69,10 +71,10 @@ const displayVideoDetails = (detail) => {
 const downloadMedia = async (videoUrl, options, filePath) => {
     const spinner = ora('Downloading...').start();
     const media = ytdl(videoUrl, options);
-    
+
     const title = (filePath.split('/').pop()).split('.')[0];
 
-    media.pipe(fs.createWriteStream(filePath));
+    media.pipe(fs.createWriteStream(TEMP_DIR + '/' + filePath));
 
     return new Promise((resolve, reject) => {
         media.on('progress', (chunkLength, downloaded, total) => {
@@ -88,7 +90,7 @@ const downloadMedia = async (videoUrl, options, filePath) => {
 
                 const mp3FilePath = filePath.replace('.opus', '.mp3');
                 try {
-                    await convertToMP3(filePath, mp3FilePath);
+                    await convertToMP3(`${TEMP_DIR}/${filePath}`, `${DOWNLOADS_DIR}/${mp3FilePath}`, options);
                 } catch (error) {
                     spinner.fail('Gagal mengonversi ke MP3');
                     console.error(error);
@@ -98,32 +100,142 @@ const downloadMedia = async (videoUrl, options, filePath) => {
             resolve();
         });
 
-        media.on('error', (error) => {
+        media.on('error', async (error) => {
             spinner.fail('Error downloading media:');
+            console.error(chalk.red(error));
+            reject(error);
+
+            const retry = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'retry',
+                    message: chalk.yellow('Apakah Anda ingin mencoba lagi?'),
+                    default: true
+                }
+            ]);
+
+            if (!retry.retry) reject(new Error('ExitPromptError'));
+
+            downloadMedia(videoUrl, options, filePath);
+        });
+    });
+};
+
+const downloadMediaExtends = async (videoUrl, videoFormat, audioFormat, filePath) => {
+    const spinner = ora('Downloading...').start();
+
+    if (!fs.existsSync('temp')) fs.mkdirSync('temp');
+
+    const video = ytdl(videoUrl, { format: videoFormat });
+    const audio = ytdl(videoUrl, { format: audioFormat });
+
+    const title = (filePath.split('/').pop()).split('.')[0];
+    const videoStream = fs.createWriteStream(DOWNLOADS_DIR + title + '.mp4');
+
+    video.pipe(videoStream);
+
+    const updateProgress = (spinner, downloaded, total) => {
+        const percent = (downloaded / total) * 100;
+        spinner.text = `${percent.toFixed(2)}% downloaded (${(downloaded / (1024 * 1024)).toFixed(2)} MB of ${(total / (1024 * 1024)).toFixed(2)} MB)`;
+    };
+
+    return new Promise((resolve, reject) => {
+        video.on('progress', (chunkLength, downloaded, total) => {
+            updateProgress(spinner, downloaded, total);
+        });
+
+        video.on('end', () => {
+            spinner.succeed(chalk.green(`Download Video ${title} selesai!, proses download audio...`));
+
+            const audioFilePath = filePath.replace('.mp4', '.opus');
+            const audioStream = fs.createWriteStream(TEMP_DIR + title + '.opus');
+
+            audio.pipe(audioStream);
+
+            audio.on('progress', (chunkLength, downloaded, total) => {
+                updateProgress(spinner, downloaded, total);
+            });
+
+            audio.on('end', async () => {
+                spinner.succeed(chalk.green(`Download Audio ${title} selesai!, proses menggabungkan video dan audio...`));
+
+                try {
+                    await mergeVideoAudio(TEMP_DIR + title + '.mp4', TEMP_DIR + title + '.opus', filePath);
+                    resolve();
+                } catch (error) {
+                    spinner.fail('Gagal mengonversi ke MP3');
+                    console.error(error);
+                    reject(error);
+                }
+            });
+
+            audio.on('error', (error) => {
+                spinner.fail('Error downloading audio:');
+                console.error(chalk.red(error));
+                reject(error);
+            });
+        });
+
+        video.on('error', (error) => {
+            spinner.fail('Error downloading video:');
             console.error(chalk.red(error));
             reject(error);
         });
     });
 };
 
-const convertToMP3 = async (rawFilePath, mp3FilePath) => {
+const convertToMP3 = (rawFilePath, mp3FilePath, options) => {
     return new Promise((resolve, reject) => {
         const spinner = ora('Mengonversi ke MP3...').start();
-        const command = `ffmpeg -y -i "${rawFilePath}" -vn -ar 44100 -ac 2 -b:a 192k "${mp3FilePath}"`;
 
-        exec(command, (error) => {
-            if (error) {
+        const bitrate = options.format.audioBitrate || '192';
+        const audioSampleRate = options.format.audioSampleRate || '44100';
+        const audioChannels = options.format.audioChannels || '2';
+
+        Ffmpeg()
+            .input(rawFilePath)
+            .audioBitrate(bitrate)
+            .audioFrequency(audioSampleRate)
+            .audioChannels(audioChannels)
+            .format('mp3')
+            .on('progress', (progress) => {
+                spinner.text = `Mengonversi ke MP3... ${progress.percent.toFixed(2)}% selesai`;
+            })
+            .on('end', () => {
+                spinner.succeed(chalk.green(`Konversi ke MP3 berhasil: ${mp3FilePath}`));
+                fs.unlinkSync(rawFilePath);
+                resolve(mp3FilePath);
+            })
+            .on('error', (error) => {
                 spinner.fail('Gagal mengonversi ke MP3');
                 reject(error);
-            } else {
-                spinner.succeed(chalk.green(`Konversi selesai: ${mp3FilePath}`));
+            })
+            .save(mp3FilePath);
+    });
+};
 
-                // delete raw file
-                fs.unlinkSync(rawFilePath);
-                
-                resolve(mp3FilePath);
-            }
-        });
+const mergeVideoAudio = (videoFilePath, audioFilePath, outputFilePath) => {
+    return new Promise((resolve, reject) => {
+        const spinner = ora('Menggabungkan video dan audio...').start();
+
+        Ffmpeg()
+            .input(videoFilePath)
+            .input(audioFilePath)
+            .outputOptions(['-c:v copy', '-c:a aac'])
+            .on('progress', (progress) => {
+                spinner.text = `Menggabungkan video dan audio... ${progress.percent.toFixed(2)}% selesai`;
+            })
+            .on('end', () => {
+                spinner.succeed(chalk.green(`Gabungan video dan audio berhasil: ${outputFilePath}`));
+                fs.unlinkSync(videoFilePath);
+                fs.unlinkSync(audioFilePath);
+                resolve(outputFilePath);
+            })
+            .on('error', (error) => {
+                spinner.fail('Gagal menggabungkan video dan audio');
+                reject(error);
+            })
+            .save(outputFilePath);
     });
 };
 
@@ -148,7 +260,57 @@ const downloadVideo = async () => {
 
     if (!download.download) return;
 
-    await downloadMedia(videoUrl, { quality: 'highest', filter: 'audioandvideo' }, `downloads/${detail.title}.mp4`);
+    const videoFormats = info.formats.filter((format) => format.hasVideo);
+
+    const videoChoices = videoFormats.map((format, index) => ({
+        name: `${format.qualityLabel} [${format.container}] - ${format.hasAudio ? 'Include Sound' : `${format.container == 'mp4' ? '(Choose Audio Available with FFmpeg)' : '(No Audio)'}`}`,
+        value: index
+    }));
+
+    const videoQuality = await inquirer.prompt([
+        {
+            type: 'list',
+            name: 'quality',
+            message: chalk.blue('Pilih kualitas video yang ingin diunduh'),
+            choices: videoChoices
+        }
+    ]);
+
+    // cek jika video tidak memiliki audio
+    if (!videoFormats[videoQuality.quality].hasAudio) {
+        console.log(chalk.yellow('Video ini tidak memiliki audio. Pilih kualitas video lain atau download audio menggunakan FFmpeg.'));
+        
+        const ffmpegDownload = await inquirer.prompt([
+            {
+                type: 'confirm',
+                name: 'ffmpeg',
+                message: chalk.blue('Apakah Anda ingin mendownload audio menggunakan FFmpeg?'),
+                default: true
+            }
+        ]);
+
+        if (!ffmpegDownload.ffmpeg) return;
+
+        const audioFormats = info.formats.filter((format) => format.hasAudio);
+        const audioChoices = audioFormats.map((format, index) => ({
+            name: `${format.audioBitrate} kbps - ${format.audioQuality}`,
+            value: index
+        }));
+
+        const audioQuality = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'quality',
+                message: chalk.blue('Pilih kualitas audio yang ingin diunduh'),
+                choices: audioChoices
+            }
+        ]);
+
+        await downloadMediaExtends(videoUrl, videoFormats[videoQuality.quality], audioFormats[audioQuality.quality], `${detail.title}.mp4`);
+    } else {
+        await downloadMedia(videoUrl, { quality: 'highest', filter: 'audioandvideo' }, `${DOWNLOADS_DIR}/${detail.title}.mp4`);
+    }
+
     setTimeout(() => {
         console.clear();
         menu();
@@ -165,6 +327,21 @@ const downloadAudio = async () => {
     const detail = info.videoDetails;
     displayVideoDetails(detail);
 
+    const audioFormats = info.formats.filter((format) => format.hasAudio);
+    const audioChoices = audioFormats.map((format, index) => ({
+        name: `${format.audioBitrate} kbps - ${format.audioQuality}`,
+        value: index
+    }));
+
+    const audioQuality = await inquirer.prompt([
+        {
+            type: 'list',
+            name: 'quality',
+            message: chalk.blue('Pilih kualitas audio yang ingin diunduh'),
+            choices: audioChoices
+        }
+    ]);
+
     const download = await inquirer.prompt([
         {
             type: 'confirm',
@@ -176,7 +353,8 @@ const downloadAudio = async () => {
 
     if (!download.download) return;
 
-    await downloadMedia(videoUrl, { quality: 'highestaudio' }, `downloads/${detail.title}.opus`);
+    await downloadMedia(videoUrl, { format: audioFormats[audioQuality.quality] }, `${detail.title}.opus`);
+
     setTimeout(() => {
         console.clear();
         menu();
@@ -214,14 +392,14 @@ const downloadPlaylist = async () => {
     if (!download.download) return;
 
     const playlistTitle = searchResults.title;
-    if (!fs.existsSync(`downloads/${playlistTitle}`)) fs.mkdirSync(`downloads/${playlistTitle}`);
+    if (!fs.existsSync(`${DOWNLOADS_DIR}/${playlistTitle}`)) fs.mkdirSync(`${DOWNLOADS_DIR}/${playlistTitle}`);
 
     for (const item of playlistItems) {
         const videoId = item.videoId;
         const title = item.title;
 
-        if (fs.existsSync(`downloads/${playlistTitle}/${title}.mp4`)) {
-            const stats = fs.statSync(`downloads/${playlistTitle}/${title}.mp4`);
+        if (fs.existsSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp4`)) {
+            const stats = fs.statSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp4`);
             if (stats.size > 0) {
                 spinner.warn(chalk.yellow(`Video ${title} sudah ada. Lewati...`));
                 continue;
@@ -229,7 +407,7 @@ const downloadPlaylist = async () => {
         }
 
         try {
-            await downloadMedia(`https://www.youtube.com/watch?v=${videoId}`, { quality: 'highest', filter: 'audioandvideo' }, `downloads/${playlistTitle}/${title}.mp4`);
+            await downloadMedia(videoId, { quality: 'highest', filter: 'audioandvideo' }, `${playlistTitle}/${title}.mp4`);
         } catch (error) {
             spinner.fail(`Gagal mendownload video ${title}.`);
         }
@@ -273,21 +451,21 @@ const downloadAudioPlaylist = async () => {
     if (!download.download) return;
 
     const playlistTitle = searchResults.title;
-    if (!fs.existsSync(`downloads/${playlistTitle}`)) fs.mkdirSync(`downloads/${playlistTitle}`);
+    if (!fs.existsSync(`${DOWNLOADS_DIR}/${playlistTitle}`)) fs.mkdirSync(`${DOWNLOADS_DIR}/${playlistTitle}`);
 
     for (const item of playlistItems) {
         const videoId = item.videoId;
         const title = item.title;
 
-        if (fs.existsSync(`downloads/${playlistTitle}/${title}.mp3`)) {
-            const stats = fs.statSync(`downloads/${playlistTitle}/${title}.mp3`);
+        if (fs.existsSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp3`)) {
+            const stats = fs.statSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp3`);
             if (stats.size > 0) {
                 spinner.warn(chalk.yellow(`Video ${title} sudah ada. Lewati...`));
                 continue;
             }
         }
 
-        await downloadMedia(`https://www.youtube.com/watch?v=${videoId}`, { quality: 'highestaudio' }, `downloads/${playlistTitle}/${title}.opus`);
+        await downloadMedia(videoId, { quality: 'highestaudio' }, `${playlistTitle}/${title}.opus`);
     }
 
     console.log(chalk.green('Semua audio di playlist berhasil didownload!'));
