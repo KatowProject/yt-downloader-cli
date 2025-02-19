@@ -53,7 +53,9 @@ bun index.js
 
 ## Build
 **Node.js**
+```
 Not available
+```
 
 **Bun.js**
 ```bash
@@ -65,3 +67,8 @@ bun build index.js --compile --outfile dist/yt-downloader.exe
 - Download video audio only
 - Download playlist video
 - Download playlist audio only.
+
+# Limitations
+- Playlist download is limited to 100 videos.
+- Don't support downloading videos with age restrictions.
+- Don't support downloading private videos.
