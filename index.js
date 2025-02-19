@@ -132,7 +132,7 @@ const downloadMediaExtends = async (videoUrl, videoFormat, audioFormat, filePath
     const audio = ytdl(videoUrl, { format: audioFormat });
 
     const title = (filePath.split('/').pop()).split('.')[0];
-    const videoStream = fs.createWriteStream(DOWNLOADS_DIR + title + '.mp4');
+    const videoStream = fs.createWriteStream(TEMP_DIR +'/' + title + '.mp4');
 
     video.pipe(videoStream);
 
@@ -148,7 +148,7 @@ const downloadMediaExtends = async (videoUrl, videoFormat, audioFormat, filePath
 
         video.on('end', () => {
             spinner.succeed(chalk.green(`Download Video ${title} selesai!, proses download audio...`));
-            const audioStream = fs.createWriteStream(TEMP_DIR + title + '.opus');
+            const audioStream = fs.createWriteStream(TEMP_DIR + '/' + title + '.opus');
 
             audio.pipe(audioStream);
 
@@ -160,7 +160,7 @@ const downloadMediaExtends = async (videoUrl, videoFormat, audioFormat, filePath
                 spinner.succeed(chalk.green(`Download Audio ${title} selesai!, proses menggabungkan video dan audio...`));
 
                 try {
-                    await mergeVideoAudio(TEMP_DIR + title + '.mp4', TEMP_DIR + title + '.opus', filePath);
+                    await mergeVideoAudio(TEMP_DIR + '/' + title + '.mp4', TEMP_DIR + '/' + title + '.opus', DOWNLOADS_DIR + '/' + filePath);
                     resolve();
                 } catch (error) {
                     spinner.fail('Gagal mengonversi ke MP3');
