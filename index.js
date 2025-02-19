@@ -74,7 +74,9 @@ const downloadMedia = async (videoUrl, options, filePath) => {
 
     const title = (filePath.split('/').pop()).split('.')[0];
 
-    media.pipe(fs.createWriteStream(TEMP_DIR + '/' + filePath));
+    const audioStream = fs.createWriteStream(`${TEMP_DIR}/${title}.opus`);
+
+    media.pipe(audioStream);
 
     return new Promise((resolve, reject) => {
         media.on('progress', (chunkLength, downloaded, total) => {
@@ -90,7 +92,7 @@ const downloadMedia = async (videoUrl, options, filePath) => {
 
                 const mp3FilePath = filePath.replace('.opus', '.mp3');
                 try {
-                    await convertToMP3(`${TEMP_DIR}/${filePath}`, `${DOWNLOADS_DIR}/${mp3FilePath}`, options);
+                    await convertToMP3(`${TEMP_DIR}/${title}.opus`, `${DOWNLOADS_DIR}/${mp3FilePath}`, options);
                 } catch (error) {
                     spinner.fail('Gagal mengonversi ke MP3');
                     console.error(error);
@@ -146,8 +148,6 @@ const downloadMediaExtends = async (videoUrl, videoFormat, audioFormat, filePath
 
         video.on('end', () => {
             spinner.succeed(chalk.green(`Download Video ${title} selesai!, proses download audio...`));
-
-            const audioFilePath = filePath.replace('.mp4', '.opus');
             const audioStream = fs.createWriteStream(TEMP_DIR + title + '.opus');
 
             audio.pipe(audioStream);
@@ -188,9 +188,9 @@ const convertToMP3 = (rawFilePath, mp3FilePath, options) => {
     return new Promise((resolve, reject) => {
         const spinner = ora('Mengonversi ke MP3...').start();
 
-        const bitrate = options.format.audioBitrate || '192';
-        const audioSampleRate = options.format.audioSampleRate || '44100';
-        const audioChannels = options.format.audioChannels || '2';
+        const bitrate = options?.format?.audioBitrate || '192';
+        const audioSampleRate = options?.format?.audioSampleRate || '44100';
+        const audioChannels = options?.format?.audioChannels || '2';
 
         Ffmpeg()
             .input(rawFilePath)
