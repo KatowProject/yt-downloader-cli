@@ -263,7 +263,7 @@ const downloadVideo = async () => {
     const videoFormats = info.formats.filter((format) => format.hasVideo);
 
     const videoChoices = videoFormats.map((format, index) => ({
-        name: `${format.qualityLabel} [${format.container}] - ${format.hasAudio ? 'Include Sound' : `${format.container == 'mp4' ? '(Choose Audio Available with FFmpeg)' : '(No Audio)'}`}`,
+        name: `${format.qualityLabel} [${format.mimeType}] (${format.fps} fps) - ${format.hasAudio ? 'Include Sound' : `${format.container == 'mp4' ? '(Choose Audio Available with FFmpeg)' : '(No Audio)'}`}`,
         value: index
     }));
 
@@ -293,7 +293,7 @@ const downloadVideo = async () => {
 
         const audioFormats = info.formats.filter((format) => format.hasAudio);
         const audioChoices = audioFormats.map((format, index) => ({
-            name: `${format.audioBitrate} kbps - ${format.audioQuality}`,
+            name: `${format.audioBitrate} kbps - ${format.audioQuality} - ${format.container}`,
             value: index
         }));
 
@@ -331,7 +331,7 @@ const downloadAudio = async () => {
 
     const audioFormats = info.formats.filter((format) => format.hasAudio);
     const audioChoices = audioFormats.map((format, index) => ({
-        name: `${format.audioBitrate} kbps - ${format.audioQuality}`,
+        name: `${format.audioQuality} - ${format.audioBitrate} kbps [${format.mimeType}]`,
         value: index
     }));
 
