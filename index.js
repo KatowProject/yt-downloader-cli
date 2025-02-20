@@ -306,9 +306,11 @@ const downloadVideo = async () => {
             }
         ]);
 
-        await downloadMediaExtends(videoUrl, videoFormats[videoQuality.quality], audioFormats[audioQuality.quality], `${detail.title}.mp4`);
+        const title = detail.title.replace(/[^\w\s]/gi, '');
+
+        await downloadMediaExtends(videoUrl, videoFormats[videoQuality.quality], audioFormats[audioQuality.quality], `${title}.mp4`);
     } else {
-        await downloadMedia(videoUrl, { quality: 'highest', filter: 'audioandvideo' }, `${DOWNLOADS_DIR}/${detail.title}.mp4`);
+        await downloadMedia(videoUrl, { quality: 'highest', filter: 'audioandvideo' }, `${DOWNLOADS_DIR}/${title}.mp4`);
     }
 
     setTimeout(() => {
@@ -353,7 +355,9 @@ const downloadAudio = async () => {
 
     if (!download.download) return;
 
-    await downloadMedia(videoUrl, { format: audioFormats[audioQuality.quality] }, `${detail.title}.opus`);
+    const title = detail.title.replace(/[^\w\s]/gi, '');
+
+    await downloadMedia(videoUrl, { format: audioFormats[audioQuality.quality] }, `${title}.opus`);
 
     setTimeout(() => {
         console.clear();
@@ -396,7 +400,7 @@ const downloadPlaylist = async () => {
 
     for (const item of playlistItems) {
         const videoId = item.videoId;
-        const title = item.title;
+        const title = item.title.replace(/[^\w\s]/gi, '');
 
         if (fs.existsSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp4`)) {
             const stats = fs.statSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp4`);
@@ -455,7 +459,7 @@ const downloadAudioPlaylist = async () => {
 
     for (const item of playlistItems) {
         const videoId = item.videoId;
-        const title = item.title;
+        const title = item.title.replace(/[^\w\s]/gi, '');
 
         if (fs.existsSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp3`)) {
             const stats = fs.statSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp3`);
