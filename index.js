@@ -1,5 +1,6 @@
 import fs from 'fs';
 import Ffmpeg from 'fluent-ffmpeg';
+import NodeID3 from 'node-id3';
 
 import inquirer from 'inquirer';
 import chalk from 'chalk';
@@ -132,7 +133,7 @@ const downloadMediaExtends = async (videoUrl, videoFormat, audioFormat, filePath
     const audio = ytdl(videoUrl, { format: audioFormat });
 
     const title = (filePath.split('/').pop()).split('.')[0];
-    const videoStream = fs.createWriteStream(TEMP_DIR +'/' + title + '.mp4');
+    const videoStream = fs.createWriteStream(TEMP_DIR + '/' + title + '.mp4');
 
     video.pipe(videoStream);
 
@@ -214,6 +215,22 @@ const convertToMP3 = (rawFilePath, mp3FilePath, options) => {
     });
 };
 
+const insertMetadata = (filePath, metadata) => {
+    return new Promise((resolve, reject) => {
+        const spinner = ora('Menambahkan metadata...').start();
+
+        NodeID3.write(metadata, filePath, (error) => {
+            if (error) {
+                spinner.fail('Gagal menambahkan metadata');
+                reject(error);
+            } else {
+                spinner.succeed(chalk.green('Metadata berhasil ditambahkan'));
+                resolve(filePath);
+            }
+        });
+    });
+};
+
 const mergeVideoAudio = (videoFilePath, audioFilePath, outputFilePath) => {
     return new Promise((resolve, reject) => {
         const spinner = ora('Menggabungkan video dan audio...').start();
@@ -279,7 +296,7 @@ const downloadVideo = async () => {
     // cek jika video tidak memiliki audio
     if (!videoFormats[videoQuality.quality].hasAudio) {
         console.log(chalk.yellow('Video ini tidak memiliki audio. Pilih kualitas video lain atau download audio menggunakan FFmpeg.'));
-        
+
         const ffmpegDownload = await inquirer.prompt([
             {
                 type: 'confirm',
@@ -400,8 +417,8 @@ const downloadPlaylist = async () => {
 
     for (const item of playlistItems) {
         const videoId = item.videoId;
-        const title = item.title.replace(/[^\w\s]/gi, '');
-
+        const title = item.title.replace(/[<>:"/\\|?*\x00-\x1F]/g, '');
+        
         if (fs.existsSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp4`)) {
             const stats = fs.statSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp4`);
             if (stats.size > 0) {
@@ -459,8 +476,8 @@ const downloadAudioPlaylist = async () => {
 
     for (const item of playlistItems) {
         const videoId = item.videoId;
-        const title = item.title.replace(/[^\w\s]/gi, '');
-
+        const title = item.title.replace(/[<>:"/\\|?*\x00-\x1F]/g, '');
+        
         if (fs.existsSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp3`)) {
             const stats = fs.statSync(`${DOWNLOADS_DIR}/${playlistTitle}/${title}.mp3`);
             if (stats.size > 0) {
